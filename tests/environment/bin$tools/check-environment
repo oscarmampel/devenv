@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+set -eu
+test "$PROJECT_BIN" = /workspace/bin
+test "$API_URL" = 'https://example.test/build/latest'
+test "$LITERAL_DOLLAR" = 'literal$sign'
+test "$HOME" = /workspace
+test "$XDG_DATA_HOME" = /workspace/.data
+test "$NIX_PATH" = project=/workspace
+test -z "${HOST_ONLY+x}"
+test -x '/workspace/bin$tools/check-environment'
+pkg-config --exists zlib
+case "$(command -v hello)" in
+  /nix/store/*/bin/hello) ;;
+  *) exit 1 ;;
+esac
+printf 'environment-delta-ok\n'
