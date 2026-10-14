@@ -63,7 +63,24 @@ retained after `down`. A failed cleanup retains the generation for a later
 `--cleanup` attempt.
 
 The [Ruby/MariaDB example](examples/ruby-mariadb/README.md) is a separate flake
-that imports this module. To check the implementation:
+that imports this module.
+
+The [Python template](templates/python/README.md) selects Python from
+`.python-version` using `nixpkgs-python`:
+
+```sh
+nix flake new my-python-project --template github:oscarmampel/devenv#python
+```
+
+The [Ruby template](templates/ruby/README.md) adds a `.ruby-version`-selected
+Ruby, the MySQL client library, and a MySQL service on an internal network. To
+create a new project from a published copy of this flake, run:
+
+```sh
+nix flake new my-ruby-project --template github:oscarmampel/devenv#ruby
+```
+
+To check the implementation:
 
 ```sh
 nix flake check .
