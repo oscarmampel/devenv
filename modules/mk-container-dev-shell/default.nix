@@ -55,6 +55,7 @@ let
       );
       launcher = pkgs.writeShellScriptBin "container-devshell" ''
         export DOCKER_HOST="unix://''${XDG_RUNTIME_DIR:?XDG_RUNTIME_DIR is required}/podman/podman.sock"
+        export CDS_CAPTURE_PATH_SPEC=${lib.escapeShellArg (shell.env.PATH or "")}
         export PATH=${
           lib.makeBinPath [
             packages.orchestrator

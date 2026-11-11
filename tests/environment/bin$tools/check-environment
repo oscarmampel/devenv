@@ -6,11 +6,16 @@ test "$LITERAL_DOLLAR" = 'literal$sign'
 test "$HOME" = /workspace
 test "$XDG_DATA_HOME" = /workspace/.data
 test "$NIX_PATH" = project=/workspace
+test "$FROM_HOST" = host-only
 test -z "${HOST_ONLY+x}"
 test -x '/workspace/bin$tools/check-environment'
 pkg-config --exists zlib
 case "$(command -v hello)" in
   /nix/store/*/bin/hello) ;;
+  *) exit 1 ;;
+esac
+case "$(command -v podman)" in
+  /nix/store/*/bin/podman) ;;
   *) exit 1 ;;
 esac
 printf 'environment-delta-ok\n'

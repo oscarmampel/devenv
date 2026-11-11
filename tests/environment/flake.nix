@@ -22,6 +22,8 @@
             LITERAL_DOLLAR = "literal$sign";
             XDG_DATA_HOME = "/workspace/.data";
             NIX_PATH = "project=/workspace";
+            FROM_HOST = "#{HOST_ONLY}";
+            PATH = "#{PATH}";
           };
           devshell.container.environment.HOME = "/workspace";
           packages.launcher = config.devShells.default.launcher;

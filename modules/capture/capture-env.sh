@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run only through the Nix wrapper, which supplies a clean environment.
+# Run only through capture-inner-env, which supplies a clean environment.
 set -eo pipefail
 project_root=
 state_dir=
@@ -26,12 +26,12 @@ direnv_layout_dir() { printf '%s\n' "$state_dir/nix-direnv"; }
 PATH_add() { export PATH="$1:$PATH"; }
 watch_file() { :; }
 _cds_env_command=$(command -v env)
-_cds_filter_command=$(command -v envfilter)
 _cds_remove_command=$(command -v rm)
-readonly _cds_env_command _cds_filter_command _cds_remove_command
+readonly _cds_env_command _cds_remove_command
 _cds_capture_baseline=$(mktemp "$state_dir/.environment-before.XXXXXX")
-readonly _cds_capture_baseline
-trap '"$_cds_remove_command" -f -- "$_cds_capture_baseline"' EXIT
+_cds_capture_after=$(mktemp "$state_dir/.environment-after.XXXXXX")
+readonly _cds_capture_baseline _cds_capture_after
+trap '"$_cds_remove_command" -f -- "$_cds_capture_baseline" "$_cds_capture_after"' EXIT
 "$_cds_env_command" -0 > "$_cds_capture_baseline"
 source "$CDS_NIX_DIRENV"
 # Its GC-root refresh uses globs for both Nix and flake profiles; only one
@@ -52,6 +52,23 @@ if [[ ! -f $state_dir/inner.nix || $(<"$state_dir/inner.nix") != "$inner_expr" ]
 fi
 use_nix "$state_dir/inner.nix"
 [[ ${NIX_DIRENV_DID_FALLBACK:-0} != 1 ]] || exit 1
-# Hooks may write to stdout; the data channel is a private file, not stdout.
-export CDS_CAPTURE_OUTPUT="$output" CDS_CAPTURE_PROJECT="$project_root"
-"$_cds_env_command" -0 | "$_cds_filter_command" --baseline "$_cds_capture_baseline" --project-root "$project_root" --output "$output"
+"$_cds_env_command" -0 > "$_cds_capture_after"
+
+# Emit only shell changes. The Go caller handles host references and paths.
+declare -A before=()
+while IFS= read -r -d '' entry; do
+  key=${entry%%=*}
+  before["$key"]=${entry#*=}
+done < "$_cds_capture_baseline"
+: > "$output"
+while IFS= read -r -d '' entry; do
+  key=${entry%%=*}
+  value=${entry#*=}
+  if [[ ${before[$key]+present} && ${before[$key]} == "$value" ]]; then
+    continue
+  fi
+  case "$key" in
+    _|SHLVL|direnv|CDS_*|BASH_FUNC_*|NIX_DIRENV_*|DIRENV_*) continue ;;
+  esac
+  printf '%s\0' "$entry" >> "$output"
+done < "$_cds_capture_after"

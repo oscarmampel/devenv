@@ -10,7 +10,11 @@ func capture(entries map[string]string, root string) map[string]string {
 	for key, value := range entries {
 		encoded = append(encoded, key+"="+value)
 	}
-	return filterEnvironment(nil, []byte(strings.Join(encoded, "\x00")), root)
+	result, err := filterEnvironment([]byte(strings.Join(encoded, "\x00")), root, nil, "")
+	if err != nil {
+		panic(err)
+	}
+	return result
 }
 
 func TestCapturedProjectPathsAreTranslatedBeforeFiltering(t *testing.T) {
@@ -59,20 +63,6 @@ func TestProjectPathBoundariesAndTraversal(t *testing.T) {
 	}
 }
 
-func TestEnvironmentDeltaDoesNotExportInheritedValues(t *testing.T) {
-	before := []byte("UNCHANGED=inherited\x00MODIFIED=old\x00PATH=/host/bin\x00EMPTY=\x00REMOVED=gone\x00")
-	after := []byte("UNCHANGED=inherited\x00MODIFIED=new\x00PATH=/project/bin:/host/bin\x00EMPTY=\x00ADDED=\x00HOME=/host/new\x00CDS_PRIVATE=private\x00")
-	result := filterEnvironment(before, after, "/project")
-	if len(result) != 4 || result["MODIFIED"] != "new" || result["ADDED"] != "" || result["PATH"] != "/workspace/bin:/bin:/usr/bin" || result["HOME"] != "/host/new" {
-		t.Fatalf("unexpected delta: %#v", result)
-	}
-	for _, key := range []string{"UNCHANGED", "EMPTY", "REMOVED", "CDS_PRIVATE"} {
-		if _, exists := result[key]; exists {
-			t.Fatalf("excluded or unchanged value %s exported", key)
-		}
-	}
-}
-
 func TestBuildURLAndLiteralDollarPathSurvive(t *testing.T) {
 	result := capture(map[string]string{
 		"URL":  "https://example.test/build/latest?value=$UNKNOWN",
@@ -89,12 +79,11 @@ func TestBuildURLAndLiteralDollarPathSurvive(t *testing.T) {
 
 func TestExplicitRuntimeExportsArePreserved(t *testing.T) {
 	keys := []string{"HOME", "USER", "LOGNAME", "SHELL", "TMP", "TMPDIR", "TEMP", "TEMPDIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "NIX_PATH", "NIX_BUILD_TOP", "PWD", "OLDPWD"}
-	var before, after []string
+	var after []string
 	for _, key := range keys {
-		before = append(before, key+"=unchanged-host")
 		after = append(after, key+"=/project/config")
 	}
-	result := filterEnvironment([]byte(strings.Join(before, "\x00")), []byte(strings.Join(after, "\x00")), "/project")
+	result := capture(mapFromEntries(after), "/project")
 	if len(result) != len(keys) {
 		t.Fatalf("explicit exports lost: %#v", result)
 	}
@@ -105,15 +94,49 @@ func TestExplicitRuntimeExportsArePreserved(t *testing.T) {
 	}
 }
 
-func TestCaptureInternalsCannotLeakEvenWhenModified(t *testing.T) {
-	keys := []string{"_", "SHLVL", "direnv", "DIRENV_DIR", "DIRENV_WATCHES", "DIRENV_DIFF", "NIX_DIRENV_DID_FALLBACK", "CDS_CAPTURE_FILTER", "CDS_CAPTURE_PROJECT", "BASH_FUNC_helper%%"}
-	var before, after []string
-	for _, key := range keys {
-		before = append(before, key+"=before")
-		after = append(after, key+"=after")
+func mapFromEntries(entries []string) map[string]string {
+	result := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		key, value, _ := strings.Cut(entry, "=")
+		result[key] = value
 	}
-	result := filterEnvironment([]byte(strings.Join(before, "\x00")), []byte(strings.Join(after, "\x00")), "/project")
-	if len(result) != 0 {
-		t.Fatalf("capture internals leaked: %#v", result)
+	return result
+}
+
+func TestHostInterpolationBeforePathFiltering(t *testing.T) {
+	host := map[string]string{
+		"PATH":  "/project/bin:/nix/store/host-tool/bin:/host/other",
+		"TOKEN": "#{OTHER}",
+		"EMPTY": "",
+	}
+	input := []byte("PATH=/nix/store/inner/bin:#{PATH}\x00CONFIG=at-#{TOKEN}-#{EMPTY}\x00")
+	result, err := filterEnvironment(input, "/project", host, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["PATH"] != "/nix/store/inner/bin:/workspace/bin:/nix/store/host-tool/bin:/bin:/usr/bin" {
+		t.Fatalf("PATH: %q", result["PATH"])
+	}
+	if result["CONFIG"] != "at-#{OTHER}-" {
+		t.Fatalf("interpolation should make one pass: %q", result["CONFIG"])
+	}
+}
+
+func TestMissingHostReferenceFails(t *testing.T) {
+	_, err := filterEnvironment([]byte("CONFIG=#{MISSING}\x00"), "/project", nil, "")
+	if err == nil || !strings.Contains(err.Error(), "MISSING") {
+		t.Fatalf("expected a missing-variable error, got %v", err)
+	}
+}
+
+func TestHostPathSpecAppendsToNixPath(t *testing.T) {
+	input := []byte("PATH=/nix/store/inner/bin\x00")
+	host := map[string]string{"PATH": "/nix/store/host/bin:/unmounted/bin"}
+	result, err := filterEnvironment(input, "/project", host, "#{PATH}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["PATH"] != "/nix/store/inner/bin:/nix/store/host/bin:/bin:/usr/bin" {
+		t.Fatalf("PATH: %q", result["PATH"])
 	}
 }

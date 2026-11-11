@@ -108,6 +108,7 @@ touch "$interrupted/compose.json"
 # The independent flake exercises declarative variables, packages, a literal
 # dollar in an environment value, and isolation from the host environment.
 fixture_launcher=$(nix build --no-link --print-out-paths "$environment_fixture#launcher")
-(cd "$environment_fixture" && HOST_ONLY=host-only "$fixture_launcher/bin/container-devshell" -- '/workspace/bin$tools/check-environment')
+host_tool_bin=$(dirname "$(command -v podman)")
+(cd "$environment_fixture" && HOST_ONLY=host-only PATH="$host_tool_bin:$PATH" "$fixture_launcher/bin/container-devshell" -- '/workspace/bin$tools/check-environment')
 
 printf 'Podman integration passed; state retained at %s\n' "$XDG_STATE_HOME"

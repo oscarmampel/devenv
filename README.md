@@ -36,6 +36,16 @@ literal strings: `$PWD` is not expanded. The optional `interactiveShell` has
 `package`, `executable`, and `args` fields; it defaults to interactive Bash.
 User-defined `shellHook` is not supported.
 
+An `env` value can contain `#{NAME}` to insert the value of `NAME` from the
+host environment at entry time. For example, `devshell.env.PATH = "#{PATH}"`
+can add host tools whose binaries live under `/nix/store` to the container's
+PATH. Profile symlinks that resolve into `/nix/store` work as well. Only
+explicitly referenced host values are imported; the captured PATH
+keeps only directories available in the container (`/nix/store`,
+`/workspace`, `/bin`, and `/usr/bin`). An unset reference fails entry. The
+runtime Compose snapshot contains the resolved value, so treat references to
+sensitive variables like other runtime environment values.
+
 `devshell.container` configures the main Compose service. It has defaults for
 the image, a writable project mount at `/workspace`, and the `/nix/store` mount.
 `devshell.compose.services` defines auxiliary services; top-level Compose
